@@ -27,5 +27,25 @@ function validateDaysObject(inputObj) {
 
   return true;
 }
-module.exports.validate = validate;
-module.exports.validateDaysObject = validateDaysObject;
+function generateRandomCode(len) {
+  const min = Math.pow(10, len - 1);
+  const max = Math.pow(10, len) - 1;
+  const randomDigit = Math.floor(Math.random() * (max - min + 1) + min);
+  return randomDigit;
+}
+function getMinuteDifference(date1, date2) {
+  const diffInMilliseconds = Math.abs(date2 - date1);
+  const diffInMinutes = Math.floor(diffInMilliseconds / (1000 * 60)); // 1 minute = 60,000 milliseconds
+  return diffInMinutes;
+}
+
+function codeExpired(codeTime, thresholdMin) {
+  const now = new Date();
+  const diff = getMinuteDifference(now, codeTime);
+
+  return diff > thresholdMin;
+}
+exports.codeExpired = codeExpired;
+exports.validate = validate;
+exports.validateDaysObject = validateDaysObject;
+exports.generateRandomCode = generateRandomCode;

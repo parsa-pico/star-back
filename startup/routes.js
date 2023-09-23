@@ -9,6 +9,6 @@ module.exports = function (app) {
   app.use(express.urlencoded({ extended: true }));
   // app.use("/bypass", bypass);
   app.use("/admin", admin);
-  // app.use("/user", user);
+  app.use("/user", user);
   app.use(error);
 };

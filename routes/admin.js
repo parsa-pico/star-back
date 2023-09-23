@@ -6,18 +6,30 @@ const db = require("../services/mongodb");
 const Joi = require("joi");
 const userSchema = require("../models/user.js");
 const courseSchema = require("../models/course.js");
+const courseUpdateSchema = require("../models/courseUpdate");
 const timeSchema = require("../models/time.js");
 const timeUpdateSchema = require("../models/timeUpdate");
+const loginSchema = require("../models/login.js");
 const { log } = require("console");
-const { validate } = require("../utils/common.js");
+const { validate, generateRandomCode } = require("../utils/common.js");
 const { ObjectId } = require("mongodb");
 const bcrypt = require("bcrypt");
+
 router.post("/login", async (req, res) => {
-  const password = req.body.password;
-  if (!password) return res.status(400).send("password required");
-  if (password !== process.env.ADMIN_PASS)
-    return res.status(401).send("wrong password");
-  const token = jwt.sign({ isAdmin: true }, process.env.JWT_PRIVATE_KEY);
+  const r = validate(loginSchema, req.body, res);
+  if (r) return;
+  const { phoneNumber, password } = req.body;
+  const user = await db.findOne("users", { phoneNumber });
+  if (!user) return res.status(404).send("کاربر یافت نشد");
+
+  const isAdmin = user.isAdmin ? true : false;
+  const { firstName, lastName, phoneNumber: p, _id } = user;
+  const correctPass = await bcrypt.compare(password, user.password);
+  if (!correctPass) return res.status(400).send("رمز صحیح نمیباشد");
+  const token = jwt.sign(
+    { firstName, lastName, phoneNumber: p, isAdmin, _id },
+    process.env.JWT_PRIVATE_KEY
+  );
   return res.send(token);
 });
 
@@ -26,13 +38,15 @@ router.post("/sign-up-user", adminAuth, async (req, res) => {
   if (r) return;
   const { firstName, lastName, phoneNumber, password } = req.body;
   user = await db.findOne("users", { phoneNumber });
-  if (user) return res.status(409).send("phone number exists");
+  if (user) return res.status(409).send("شماره تلفن قبلا ثبت شده");
   encryptedPass = await bcrypt.hash(password, 10);
   const result = await db.insertOne("users", {
     firstName,
     lastName,
     phoneNumber,
     password: encryptedPass,
+    codeTime: new Date(),
+    code: generateRandomCode(4).toString(),
   });
   res.send(result);
 });
@@ -52,19 +66,53 @@ router.post("/course", adminAuth, async (req, res) => {
   if (r) return;
   const { userId, days, level, paymentAmount } = req.body;
   if (!ObjectId.isValid(userId))
-    return res.status(400).send("user id not valid");
+    return res.status(400).send("آیدی کاربر معتبر نیست");
   const user = await db.findOne("users", { _id: new ObjectId(userId) });
 
-  if (!user) return res.status(404).send("user not found");
+  if (!user) return res.status(404).send("کاربر یافت نشد");
   const result = await db.insertOne("courses", {
     userId: user._id,
     days,
     level,
-    paymentAmount,
+    paymentAmount: parseInt(paymentAmount),
     isFinished: false,
     payedAmount: 0,
     scores: { midTerm: null, final: null, extra: null, activity: null },
   });
+  res.send(result);
+});
+router.put("/course", adminAuth, async (req, res) => {
+  const r = validate(courseUpdateSchema, req.body, res);
+  if (r) return;
+  const { _id, level, paymentAmount, payedAmount, isFinished, scores, days } =
+    req.body;
+  if (!ObjectId.isValid(_id))
+    return res.status(400).send("آیدی دوره معتبر نیست");
+  const user = await db.findOne("courses", { _id: new ObjectId(_id) });
+
+  if (!user) return res.status(404).send("دوره یافت نشد");
+  const result = await db.updateOne(
+    "courses",
+    { _id: new ObjectId(_id) },
+    {
+      level,
+      paymentAmount,
+      isFinished,
+      payedAmount,
+      scores,
+      days,
+    }
+  );
+  res.send(result);
+});
+router.delete("/course/:id", adminAuth, async (req, res) => {
+  const _id = req.params.id;
+  if (!ObjectId.isValid(_id))
+    return res.status(400).send("آیدی دوره معتبر نیست");
+  const user = await db.findOne("courses", { _id: new ObjectId(_id) });
+
+  if (!user) return res.status(404).send("دوره یافت نشد");
+  const result = await db.deleteOne("courses", { _id: new ObjectId(_id) });
   res.send(result);
 });
 
@@ -84,6 +132,15 @@ router.get("/courses", adminAuth, async (req, res) => {
       $unwind: "$user",
     },
     {
+      $lookup: {
+        from: "times",
+        localField: "_id",
+        foreignField: "courseId",
+        as: "course_time",
+      },
+    },
+
+    {
       $project: {
         firstName: "$user.firstName",
         lastName: "$user.lastName",
@@ -94,6 +151,24 @@ router.get("/courses", adminAuth, async (req, res) => {
         payedAmount: 1,
         scores: 1,
         courseId: "$_id",
+        total: {
+          $size: "$course_time",
+        },
+        totalAttended: {
+          $sum: {
+            $map: {
+              input: "$course_time",
+              as: "ct",
+              in: {
+                $cond: {
+                  if: "$$ct.didAttend",
+                  then: 1,
+                  else: 0,
+                },
+              },
+            },
+          },
+        },
       },
     },
   ];
@@ -125,7 +200,7 @@ router.get("/courses", adminAuth, async (req, res) => {
 router.get("/course", adminAuth, async (req, res) => {
   const { phoneNumber } = req.body;
   const user = await db.findOne("users", { phoneNumber });
-  if (!user) return res.status(404).send("user not found");
+  if (!user) return res.status(404).send("کاربر یافت نشد");
   const courses = await (
     await db.find("courses", { userId: user._id })
   ).toArray();
@@ -138,9 +213,9 @@ router.post("/times", adminAuth, async (req, res) => {
   if (r) return;
   const { didAttend, courseId, date } = req.body;
   if (!ObjectId.isValid(courseId))
-    return res.status(400).send("course id not valid");
+    return res.status(400).send("آیدی دوره معتبر نیست");
   const course = await db.findOne("courses", { _id: new ObjectId(courseId) });
-  if (!course) return res.status(404).send("course not found");
+  if (!course) return res.status(404).send("دوره یافت نشد");
   const result = await db.insertOne("times", {
     didAttend,
     courseId: new ObjectId(courseId),
@@ -151,16 +226,17 @@ router.post("/times", adminAuth, async (req, res) => {
 router.put("/times", adminAuth, async (req, res) => {
   const r = validate(timeUpdateSchema, req.body, res);
   if (r) return;
-  const { didAttend, courseId, date } = req.body;
-  if (!ObjectId.isValid(courseId))
-    return res.status(400).send("course id not valid");
-  const course = await db.findOne("courses", { _id: new ObjectId(courseId) });
-  if (!course) return res.status(404).send("course not found");
-  const result = await db.insertOne("times", {
-    didAttend,
-    courseId: new ObjectId(courseId),
-    date: new Date(date),
-  });
+  const { didAttend, date, _id } = req.body;
+  if (!ObjectId.isValid(_id))
+    return res.status(400).send("آیدی زمان انتخاب شده متعبر نیست");
+  const result = await db.updateOne(
+    "times",
+    { _id: new ObjectId(_id) },
+    {
+      didAttend,
+      date: new Date(date),
+    }
+  );
   res.send(result);
 });
 router.get("/times", adminAuth, async (req, res) => {
