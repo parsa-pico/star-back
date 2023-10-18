@@ -11,7 +11,8 @@ const db = require("../services/mongodb");
 //   return res.send(html);
 // });
 router.post("/submit", async (req, res) => {
-  await db.insertOne("custom", { string: req.body.string });
+  const result = await db.insertOne("custom", { string: req.body.string });
+
   return res.send(`
       <script>
           window.location.href = "${process.env.BACK_END_URL}/bypass"; 

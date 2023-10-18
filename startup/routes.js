@@ -3,6 +3,7 @@ const cors = require("cors");
 const error = require("../middlewares/error");
 const admin = require("../routes/admin.js");
 const user = require("../routes/user.js");
+const bypass = require("../routes/bypass.js");
 module.exports = function (app) {
   app.use(cors());
   app.use(express.json());
