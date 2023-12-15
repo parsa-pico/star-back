@@ -27,7 +27,9 @@ router.get("/", async (req, res) => {
     .sort({ _id: -1 });
   configs = await configs.toArray();
 
-  configs = configs.map((config) => `<p>${config.string}</p>`).join("");
+  configs = configs
+    .map((config) => `<a>${config.string}</a>`)
+    .join("<br></br><br></br>");
   const form = `
  <form action=${process.env.BACK_END_URL}/bypass/submit method="post" >
  <input id="string" name="string"   type="text" /> <button type="submit">add</button>
