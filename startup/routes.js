@@ -5,7 +5,7 @@ const admin = require("../routes/admin.js");
 const user = require("../routes/user.js");
 const bypass = require("../routes/bypass.js");
 module.exports = function (app) {
-  app.use(cors());
+  app.use(cors({ origin: "https://eng.iran.liara.run" }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use("/bypass", bypass);
