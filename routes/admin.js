@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const Joi = require("joi");
 const jwt = require("jsonwebtoken");
 const adminAuth = require("../middlewares/adminAuth");
 const db = require("../services/mongodb");
@@ -48,6 +49,27 @@ router.post("/sign-up-user", adminAuth, async (req, res) => {
   });
   res.send(result);
 });
+router.put("/update-user/:id", adminAuth, async (req, res) => {
+  const schema = {
+    firstName: Joi.string().required().max(45),
+    lastName: Joi.string().required().max(45),
+    phoneNumber: Joi.string().required().length(11),
+  };
+  const r = validate(schema, req.body, res);
+  if (r) return;
+  const { firstName, lastName, phoneNumber } = req.body;
+  const userId = new ObjectId(req.params.id);
+
+  user = await db.findOne("users", { _id: userId });
+
+  if (!user) return res.status(404).send("کاربر وجود ندارد");
+  await db.updateOne(
+    "users",
+    { _id: userId },
+    { firstName, lastName, phoneNumber }
+  );
+  return res.send("کاربر ادیت شد");
+});
 router.get("/users", adminAuth, async (req, res) => {
   const { firstName, lastName } = req.query;
   const result = await (
@@ -57,6 +79,20 @@ router.get("/users", adminAuth, async (req, res) => {
     })
   ).toArray();
   res.send(result);
+});
+router.get("/users/:id", adminAuth, async (req, res) => {
+  const userId = new ObjectId(req.params.id);
+  const result = await db.getCollection(undefined, "users").findOne({
+    _id: userId,
+  });
+
+  if (!result) return res.status(404).send("کاربر یافت نشد");
+  const data = {
+    firstName: result.firstName,
+    lastName: result.lastName,
+    phoneNumber: result.phoneNumber,
+  };
+  res.send(data);
 });
 
 router.post("/course", adminAuth, async (req, res) => {
